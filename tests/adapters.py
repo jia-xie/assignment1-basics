@@ -392,6 +392,52 @@ def run_transformer_lm(
         Float[Tensor, "batch_size sequence_length vocab_size"]: Tensor with the predicted unnormalized
         next-word distribution for each token.
     """
+    # --- Initialize model ---
+    model = cs336_basics.model.TransformerLM(
+        d_model=d_model,
+        num_heads=num_heads,
+        d_ff=d_ff,
+        vocab_size=vocab_size,
+        context_length=context_length,
+        num_layers=num_layers,
+        rope_theta=rope_theta,
+        device=in_indices.device,
+        dtype=torch.float32,
+    )
+
+    # --- Load weights ---
+    # Token embedding
+    model.token_embeddings.weight.data = weights["token_embeddings.weight"].to(torch.float32)
+
+    # Per-layer weights
+    for i, layer in enumerate(model.laygers):
+        prefix = f"layers.{i}."
+
+        # Attention projections
+        q_proj = weights[f"{prefix}attn.q_proj.weight"]
+        k_proj = weights[f"{prefix}attn.k_proj.weight"]
+        v_proj = weights[f"{prefix}attn.v_proj.weight"]
+        out_proj = weights[f"{prefix}attn.output_proj.weight"]
+
+        layer.attn.qkv.weight.data = torch.cat([q_proj, k_proj, v_proj], dim=0).to(torch.float32)
+        layer.attn.out.weight.data = out_proj.to(torch.float32)
+
+        # Norms
+        layer.ln1.weight.data = weights[f"{prefix}ln1.weight"].to(torch.float32)
+        layer.ln2.weight.data = weights[f"{prefix}ln2.weight"].to(torch.float32)
+
+        # Feed-forward layers
+        layer.ffn.w1.weight.data = weights[f"{prefix}ffn.w1.weight"].to(torch.float32)
+        layer.ffn.w2.weight.data = weights[f"{prefix}ffn.w2.weight"].to(torch.float32)
+        layer.ffn.w3.weight.data = weights[f"{prefix}ffn.w3.weight"].to(torch.float32)
+
+    # --- Final norm + LM head ---
+    model.ln_final.weight.data = weights["ln_final.weight"].to(torch.float32)
+    model.lm_head.weight.data = weights["lm_head.weight"].to(torch.float32)
+
+    # --- Forward pass ---
+    logits = model(in_indices.to(torch.long))  # shape (B, T, vocab_size)
+    return logits
     raise NotImplementedError
 
 

@@ -167,7 +167,7 @@ class MultiHeadSelfAttention(torch.nn.Module):
         y = scaled_dot_product_attention(q, k, v, mask)
         y = y.transpose(1, 2).reshape(B, T, self.d_model)
         return self.out(y)
-    
+
 
 class TransformerBlock(torch.nn.Module):
     def __init__(
@@ -190,6 +190,49 @@ class TransformerBlock(torch.nn.Module):
         self.ln2 = RMSNorm(d_model, device=device, dtype=dtype)
         self.ffn = SwiGLU(d_model, d_ff, device, dtype)
 
-    def forward(self, x: torch.Tensor):
-        x = x + self.attn(self.ln1(x))
+    def forward(self, x: torch.Tensor, token_positions: torch.Tensor | None = None):
+        x = x + self.attn(self.ln1(x), token_positions)
         return x + self.ffn(self.ln2(x))
+
+class TransformerLM(torch.nn.Module):
+    def __init__(
+        self,
+        d_model: int,
+        num_heads: int,
+        d_ff: int,
+        vocab_size: int,
+        context_length: int,
+        num_layers: int,
+        rope_theta=10000.0,
+        rope=None,
+        device=None,
+        dtype=None,
+    ):
+        super().__init__()
+        self.context_length = context_length
+        self.token_embeddings = Emdebbing(vocab_size, d_model, device, dtype)
+        
+        if d_model % num_heads != 0:
+            raise ValueError("num_heads is not a factor of d_model")
+        
+        d_head = d_model // num_heads
+        rope = RotaryPositionalEmbedding(rope_theta, d_head, context_length, device=device, dtype=dtype)
+        
+        self.laygers = torch.nn.ModuleList(
+            [TransformerBlock(d_model, num_heads, d_ff, rope, device, dtype) for i in range(num_layers)]
+        )
+        
+        self.ln_final = RMSNorm(d_model, device=device, dtype=dtype)
+        self.lm_head = Linear(d_model, vocab_size, device, dtype)
+    
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        B, T = x.shape
+        x = self.token_embeddings(x)
+        
+        for layer in self.laygers:
+            x = layer(x)
+        
+        x = self.ln_final(x)
+        x = self.lm_head(x)
+        
+        return x
