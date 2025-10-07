@@ -291,8 +291,27 @@ def run_transformer_block(
         Float[Tensor, "batch sequence_length d_model"] Tensor with the output of
         running the Transformer block on the input features while using RoPE.
     """
-    raise NotImplementedError
 
+    d_head = d_model // num_heads
+    rope = cs336_basics.model.RotaryPositionalEmbedding(theta, d_head, max_seq_len)
+
+    block = cs336_basics.model.TransformerBlock(d_model, num_heads, d_ff, rope=rope)
+
+    block.attn.qkv.weight.data = torch.cat([
+        weights["attn.q_proj.weight"],
+        weights["attn.k_proj.weight"],
+        weights["attn.v_proj.weight"],
+    ], dim=0)
+    block.attn.out.weight.data = weights["attn.output_proj.weight"]
+
+    block.ln1.weight.data = weights["ln1.weight"]
+    block.ln2.weight.data = weights["ln2.weight"]
+
+    block.ffn.w1.weight.data = weights["ffn.w1.weight"]
+    block.ffn.w2.weight.data = weights["ffn.w2.weight"]
+    block.ffn.w3.weight.data = weights["ffn.w3.weight"]
+
+    return block(in_features)
 
 def run_transformer_lm(
     vocab_size: int,

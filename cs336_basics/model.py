@@ -167,3 +167,29 @@ class MultiHeadSelfAttention(torch.nn.Module):
         y = scaled_dot_product_attention(q, k, v, mask)
         y = y.transpose(1, 2).reshape(B, T, self.d_model)
         return self.out(y)
+    
+
+class TransformerBlock(torch.nn.Module):
+    def __init__(
+        self,
+        d_model: int,
+        num_heads: int,
+        d_ff: int,
+        rope=None,
+        device=None,
+        dtype=None,
+    ):
+        super().__init__()
+        self.d_model = d_model
+        self.num_heads = num_heads
+        self.d_ff = d_ff
+
+        self.rope = rope
+        self.ln1 = RMSNorm(d_model, device=device, dtype=dtype)
+        self.attn = MultiHeadSelfAttention(d_model, num_heads, rope, device, dtype)
+        self.ln2 = RMSNorm(d_model, device=device, dtype=dtype)
+        self.ffn = SwiGLU(d_model, d_ff, device, dtype)
+
+    def forward(self, x: torch.Tensor):
+        x = x + self.attn(self.ln1(x))
+        return x + self.ffn(self.ln2(x))
