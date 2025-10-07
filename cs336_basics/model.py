@@ -92,69 +92,78 @@ class RotaryPositionalEmbedding(torch.nn.Module):
         super().__init__()
         positions = torch.arange(max_seq_len, device=device)
         i = torch.arange(0, d_k, 2, device=device)
-        inv_freq = 1.0 / (theta**(i/d_k))
+        inv_freq = 1.0 / (theta ** (i / d_k))
         angles = positions[:, None] * inv_freq[None, :]
 
         self.register_buffer("cos", angles.cos().to(dtype), persistent=False)
         self.register_buffer("sin", angles.sin().to(dtype), persistent=False)
 
-    def forward(self, x:torch.Tensor, token_positions:torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, token_positions: torch.Tensor) -> torch.Tensor:
         cos_rot = self.cos[token_positions]
         sin_rot = self.sin[token_positions]
-        
+
         x_even = x[..., 0::2]
         x_odd = x[..., 1::2]
-        
+
         x_even_rot = x_even * cos_rot - x_odd * sin_rot
         x_odd_rot = x_even * sin_rot + x_odd * cos_rot
-        
+
         out = torch.empty_like(x)
         out[..., 0::2] = x_even_rot
         out[..., 1::2] = x_odd_rot
-        
+
         return out
-    
+
+
 def softmax(x: torch.Tensor, dim: int = -1) -> torch.Tensor:
     x_max = x.max(dim=dim, keepdim=True).values
     x_exp = torch.exp(x - x_max)
     return x_exp / x_exp.sum(dim=dim, keepdim=True)
 
-def scaled_dot_product_attention(Q: torch.Tensor, K: torch.Tensor, V: torch.Tensor, mask: torch.Tensor):
+
+def scaled_dot_product_attention(
+    Q: torch.Tensor, K: torch.Tensor, V: torch.Tensor, mask: torch.Tensor
+):
     d_k = Q.shape[-1]
     attention_scores = Q @ K.transpose(-2, -1) / math.sqrt(d_k)
     attention_scores = torch.where(mask, attention_scores, float("-inf"))
     attention_weights = softmax(attention_scores)
     return attention_weights @ V
-    
+
+
 class MultiHeadSelfAttention(torch.nn.Module):
-    def __init__(self, d_model: int, num_heads: int, rope=None, device=None, dtype=None):
+    def __init__(
+        self, d_model: int, num_heads: int, rope=None, device=None, dtype=None
+    ):
         super().__init__()
         self.d_model = d_model
         self.num_heads = num_heads
         self.d_head = d_model // num_heads
-        
+
         self.qkv = Linear(d_model, 3 * d_model, device, dtype)
         self.out = Linear(d_model, d_model, device, dtype)
-        
+
         self.rope = rope
-        
+
     def forward(self, x: torch.Tensor, token_positions: torch.Tensor | None = None):
         B, T, _ = x.shape
-        
+
         qkv = self.qkv(x)
         q, k, v = qkv.chunk(3, dim=-1)
-        
-        q = q.reshape(B, T, self.num_heads, self.d_head).transpose(1,2)
-        k = k.reshape(B, T, self.num_heads, self.d_head).transpose(1,2)
-        v = v.reshape(B, T, self.num_heads, self.d_head).transpose(1,2)
+
+        q = q.reshape(B, T, self.num_heads, self.d_head).transpose(1, 2)
+        k = k.reshape(B, T, self.num_heads, self.d_head).transpose(1, 2)
+        v = v.reshape(B, T, self.num_heads, self.d_head).transpose(1, 2)
         if token_positions is None:
-                token_positions = torch.arange(T, device=x.device)
+            token_positions = torch.arange(T, device=x.device)
         if self.rope is not None:
             q = self.rope(q, token_positions)
             k = self.rope(k, token_positions)
-        
-        mask = ~torch.triu(torch.ones((T, T), device=x.device, dtype=torch.bool), diagonal=1)
+
+        mask = ~torch.triu(
+            torch.ones((T, T), device=x.device, dtype=torch.bool), diagonal=1
+        )
 
         y = scaled_dot_product_attention(q, k, v, mask)
-        y = y.transpose(1,2).reshape(B, T, self.d_model)
+        y = y.transpose(1, 2).reshape(B, T, self.d_model)
         return self.out(y)
