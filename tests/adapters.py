@@ -8,7 +8,8 @@ import numpy.typing as npt
 import torch
 from jaxtyping import Bool, Float, Int
 from torch import Tensor
-
+import cs336_basics.train_bpe
+import cs336_basics.model
 
 def run_linear(
     d_in: int,
@@ -28,8 +29,9 @@ def run_linear(
     Returns:
         Float[Tensor, "... d_out"]: The transformed output of your linear module.
     """
-
-    raise NotImplementedError
+    layer = cs336_basics.model.Linear(d_in, d_out)
+    layer.weight.data = weights
+    return layer.forward(in_features)
 
 
 def run_embedding(
@@ -50,8 +52,9 @@ def run_embedding(
     Returns:
         Float[Tensor, "... d_model"]: Batch of embeddings returned by your Embedding layer.
     """
-
-    raise NotImplementedError
+    layer = cs336_basics.model.Emdebbing(vocab_size, d_model)
+    layer.weight.data = weights
+    return layer.forward(token_ids)
 
 
 def run_swiglu(
@@ -80,10 +83,12 @@ def run_swiglu(
     # If your state dict keys match, you can use `load_state_dict()`
     # swiglu.load_state_dict(weights)
     # You can also manually assign the weights
-    # swiglu.w1.weight.data = w1_weight
-    # swiglu.w2.weight.data = w2_weight
-    # swiglu.w3.weight.data = w3_weight
-    raise NotImplementedError
+    swiglu = cs336_basics.model.SwiGLU(d_model, d_ff)
+    swiglu.w1.weight.data = w1_weight
+    swiglu.w2.weight.data = w2_weight
+    swiglu.w3.weight.data = w3_weight
+    return swiglu(in_features)
+    # raise NotImplementedError
 
 
 def run_scaled_dot_product_attention(
@@ -200,6 +205,9 @@ def run_rope(
     Returns:
         Float[Tensor, " ... sequence_length d_k"]: Tensor with RoPEd input.
     """
+    rope = cs336_basics.model.RotaryPositionalEmbedding(theta, d_k, max_seq_len)
+    return rope(in_query_or_key, token_positions)
+    
     raise NotImplementedError
 
 
@@ -378,7 +386,9 @@ def run_rmsnorm(
         Float[Tensor,"... d_model"]: Tensor of with the same shape as `in_features` with the output of running
         RMSNorm of the `in_features`.
     """
-    raise NotImplementedError
+    layer = cs336_basics.model.RMSNorm(d_model, eps)
+    layer.weight.data = weights
+    return layer.forward(in_features)
 
 
 def run_silu(in_features: Float[Tensor, " ..."]) -> Float[Tensor, " ..."]:
@@ -431,7 +441,8 @@ def run_softmax(in_features: Float[Tensor, " ..."], dim: int) -> Float[Tensor, "
         Float[Tensor, "..."]: Tensor of with the same shape as `in_features` with the output of
         softmax normalizing the specified `dim`.
     """
-    raise NotImplementedError
+    return cs336_basics.model.softmax(in_features)
+    # raise NotImplementedError
 
 
 def run_cross_entropy(
@@ -589,4 +600,5 @@ def run_train_bpe(
                 representing that <token1> was merged with <token2>.
                 Merges are ordered by order of creation.
     """
-    raise NotImplementedError
+
+    return cs336_basics.train_bpe.train_bpe(input_path, vocab_size, special_tokens)
